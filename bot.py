@@ -15,6 +15,7 @@ the full fetched list without re-hitting TikTok.
 """
 import logging
 import os
+import random
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
@@ -134,8 +135,15 @@ async def send_digest(
         key = (lambda v: v["score"]) if sort_by_score else (lambda v: v["views"])
         sorted_videos = sorted(videos, key=key, reverse=True)
 
+        # Shuffle the top 30 so each call returns a different selection,
+        # while still only pulling from the genuinely popular pool.
+        pool = sorted_videos[:30]
+        random.shuffle(pool)
+        remainder = sorted_videos[30:]  # keep tail in score order as fallback
+        shuffled = pool + remainder
+
         user_id = update.effective_user.id
-        _cache[user_id] = {"videos": sorted_videos, "offset": 0, "title": title}
+        _cache[user_id] = {"videos": shuffled, "offset": 0, "title": title}
 
         await send_page(update, user_id, is_callback=False)
 
