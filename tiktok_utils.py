@@ -2,8 +2,17 @@ import time
 from TikTokApi import TikTokApi
 
 DEFAULT_HASHTAGS = [
-    "aigenerated", "aiart", "aivideo", "kling", "hailuo",
-    "runwayml", "soraai", "midjourney", "aianimation", "wouldyourather",
+    # AI video generation tools
+    "aigenerated", "aivideo", "aianimation", "aifilm",
+    "kling", "klingai", "hailuo", "hailuoai",
+    "runwayml", "runway", "soraai", "luma", "lumaai",
+    "pixverse", "pixai", "viduai",
+    # AI image / art
+    "aiart", "midjourney", "dalle", "stableai", "stablediffusion",
+    # Viral AI content formats
+    "wouldyourather", "aicreator", "aitrend", "aitools",
+    # Broad reach
+    "aigeneredcontent", "artificialintelligence",
 ]
 
 
@@ -41,10 +50,16 @@ def html_escape(text: str) -> str:
 async def fetch_videos(
     ms_token: str,
     hashtags: list[str] | None = None,
-    videos_per_tag: int = 30,
-    max_age_hours: float | None = 72,
+    videos_per_tag: int = 100,
+    max_age_hours: float | None = None,
     min_views: int = 0,
 ) -> list[dict]:
+    """
+    Fetches videos WITHOUT a time filter during the API loop — TikTok returns
+    all-time popular videos first, so filtering during the loop would discard
+    everything before we ever reach recent videos. Instead we collect the full
+    pool and filter afterwards.
+    """
     tags = hashtags or DEFAULT_HASHTAGS
     seen_ids: set[str] = set()
     results: list[dict] = []
@@ -60,6 +75,7 @@ async def fetch_videos(
         for tag in tags:
             try:
                 hashtag = api.hashtag(name=tag)
+                # Fetch a large batch; recent videos are buried behind old popular ones
                 async for video in hashtag.videos(count=videos_per_tag):
                     vid_id = video.id
                     if vid_id in seen_ids:
@@ -68,16 +84,10 @@ async def fetch_videos(
 
                     d = video.as_dict
                     created_at = d.get("createTime", 0)
-                    if cutoff and created_at and created_at < cutoff:
-                        continue
-
                     stats = d.get("stats", {})
                     author = d.get("author", {})
                     views = stats.get("playCount", 0)
                     likes = stats.get("diggCount", 0)
-
-                    if views < min_views:
-                        continue
 
                     results.append({
                         "id": vid_id,
@@ -91,6 +101,12 @@ async def fetch_videos(
                     })
             except Exception as exc:
                 print(f"[WARN] #{tag}: {exc}")
+
+    # Apply time and view filters after collecting the full pool
+    if cutoff:
+        results = [v for v in results if v["created_at"] and v["created_at"] >= cutoff]
+    if min_views:
+        results = [v for v in results if v["views"] >= min_views]
 
     return results
 

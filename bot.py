@@ -45,12 +45,12 @@ Tap <b>5 more ➡️</b> under any result to cycle through more videos.
 """.strip()
 
 MIN_VIEWS = {
-    "fresh":   20_000,
-    "today":   75_000,
-    "digest":  150_000,
-    "week":    300_000,
-    "alltime": 1_000_000,
-    "tag":     30_000,
+    "fresh":   10_000,   # 6h  — viral speed matters more than size
+    "today":   30_000,   # 24h
+    "digest":  50_000,   # 72h — gives ~15 videos
+    "week":    100_000,  # 7d  — gives ~34 videos
+    "alltime": 500_000,
+    "tag":     20_000,
 }
 
 # Per-user cache: { user_id: { videos, offset, title } }
@@ -121,16 +121,17 @@ async def send_digest(
         videos = await fetch_videos(
             MS_TOKEN,
             hashtags=hashtags,
-            videos_per_tag=50,
+            videos_per_tag=100,
             max_age_hours=max_age_hours,
             min_views=min_views,
         )
         if not videos:
             await update.message.reply_text(
-                f"😕 No videos hit the popularity threshold ({min_views:,} views) in this timeframe.\n"
-                "Try /digest or /week for a wider window."
+                f"😕 Nothing found with {min_views:,}+ views in this timeframe — try /digest or /week."
             )
             return
+
+        log.info(f"{title}: {len(videos)} videos passed filters")
 
         key = (lambda v: v["score"]) if sort_by_score else (lambda v: v["views"])
         sorted_videos = sorted(videos, key=key, reverse=True)
