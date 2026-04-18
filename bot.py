@@ -45,12 +45,12 @@ Tap <b>5 more ➡️</b> under any result to cycle through more videos.
 """.strip()
 
 MIN_VIEWS = {
-    "fresh":   50_000,
-    "today":   200_000,
-    "digest":  500_000,
-    "week":  1_000_000,
-    "alltime": 5_000_000,
-    "tag":     100_000,
+    "fresh":   20_000,
+    "today":   75_000,
+    "digest":  150_000,
+    "week":    300_000,
+    "alltime": 1_000_000,
+    "tag":     30_000,
 }
 
 # Per-user cache: { user_id: { videos, offset, title } }
@@ -121,7 +121,7 @@ async def send_digest(
         videos = await fetch_videos(
             MS_TOKEN,
             hashtags=hashtags,
-            videos_per_tag=30,
+            videos_per_tag=50,
             max_age_hours=max_age_hours,
             min_views=min_views,
         )
