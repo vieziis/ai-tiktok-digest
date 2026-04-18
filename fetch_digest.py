@@ -25,7 +25,7 @@ def send_telegram(text: str) -> None:
 
 async def main() -> None:
     print("Fetching TikTok videos…")
-    videos = await fetch_videos(MS_TOKEN, max_age_hours=72)
+    videos = await fetch_videos(MS_TOKEN, max_age_hours=72, min_views=500_000)
 
     if not videos:
         print("No recent videos found.", file=sys.stderr)

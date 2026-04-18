@@ -43,6 +43,7 @@ async def fetch_videos(
     hashtags: list[str] | None = None,
     videos_per_tag: int = 30,
     max_age_hours: float | None = 72,
+    min_views: int = 0,
 ) -> list[dict]:
     tags = hashtags or DEFAULT_HASHTAGS
     seen_ids: set[str] = set()
@@ -74,6 +75,10 @@ async def fetch_videos(
                     author = d.get("author", {})
                     views = stats.get("playCount", 0)
                     likes = stats.get("diggCount", 0)
+
+                    if views < min_views:
+                        continue
+
                     results.append({
                         "id": vid_id,
                         "desc": (d.get("desc") or "").strip() or "(no description)",

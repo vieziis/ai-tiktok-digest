@@ -40,13 +40,40 @@ HELP_TEXT = """
 """.strip()
 
 
-async def send_digest(update: Update, title: str, max_age_hours: float | None, sort_by_score: bool = True, hashtags: list[str] | None = None) -> None:
+# Minimum views required per timeframe to qualify as "popular"
+MIN_VIEWS = {
+    "fresh":   50_000,    # 6h  — must be exploding fast
+    "today":   200_000,   # 24h
+    "digest":  500_000,   # 72h
+    "week":  1_000_000,   # 7d
+    "alltime": 5_000_000, # no time limit — only genuine viral hits
+    "tag":     100_000,   # custom hashtag searches
+}
+
+
+async def send_digest(
+    update: Update,
+    title: str,
+    max_age_hours: float | None,
+    sort_by_score: bool = True,
+    hashtags: list[str] | None = None,
+    min_views: int = 0,
+) -> None:
     await update.message.reply_text("⏳ Fetching videos, this takes ~30s…")
     await update.effective_chat.send_action(ChatAction.TYPING)
     try:
-        videos = await fetch_videos(MS_TOKEN, hashtags=hashtags, videos_per_tag=30, max_age_hours=max_age_hours)
+        videos = await fetch_videos(
+            MS_TOKEN,
+            hashtags=hashtags,
+            videos_per_tag=30,
+            max_age_hours=max_age_hours,
+            min_views=min_views,
+        )
         if not videos:
-            await update.message.reply_text("😕 No videos found for that timeframe. Try a wider window.")
+            await update.message.reply_text(
+                f"😕 No videos hit the popularity threshold ({min_views:,} views) in this timeframe.\n"
+                "Try /digest or /week for a wider window."
+            )
             return
         key = (lambda v: v["score"]) if sort_by_score else (lambda v: v["views"])
         top = sorted(videos, key=key, reverse=True)[:TOP_N]
@@ -62,23 +89,23 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await send_digest(update, "Trending AI TikToks — Last 72h", max_age_hours=72)
+    await send_digest(update, "Trending AI TikToks — Last 72h", max_age_hours=72, min_views=MIN_VIEWS["digest"])
 
 
 async def cmd_today(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await send_digest(update, "Trending AI TikToks — Last 24h", max_age_hours=24)
+    await send_digest(update, "Trending AI TikToks — Last 24h", max_age_hours=24, min_views=MIN_VIEWS["today"])
 
 
 async def cmd_fresh(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await send_digest(update, "Fresh AI TikToks — Last 6h", max_age_hours=6)
+    await send_digest(update, "Fresh AI TikToks — Last 6h", max_age_hours=6, min_views=MIN_VIEWS["fresh"])
 
 
 async def cmd_week(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await send_digest(update, "Trending AI TikToks — Last 7 Days", max_age_hours=168)
+    await send_digest(update, "Trending AI TikToks — Last 7 Days", max_age_hours=168, min_views=MIN_VIEWS["week"])
 
 
 async def cmd_alltime(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await send_digest(update, "All-Time Top AI TikToks", max_age_hours=None, sort_by_score=False)
+    await send_digest(update, "All-Time Top AI TikToks", max_age_hours=None, sort_by_score=False, min_views=MIN_VIEWS["alltime"])
 
 
 async def cmd_tag(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -86,7 +113,7 @@ async def cmd_tag(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Usage: /tag <hashtag>  e.g. /tag kling")
         return
     tag = ctx.args[0].lstrip("#").lower()
-    await send_digest(update, f"Trending #{tag} TikToks", max_age_hours=72, hashtags=[tag])
+    await send_digest(update, f"Trending #{tag} TikToks", max_age_hours=72, hashtags=[tag], min_views=MIN_VIEWS["tag"])
 
 
 def main() -> None:
