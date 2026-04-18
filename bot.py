@@ -9,23 +9,25 @@ Commands:
   /week            — trending last 7 days
   /alltime         — top by raw views, no time limit
   /tag <name>      — fetch from a specific hashtag (e.g. /tag kling)
+
+Pagination: each result set has a "5 more ➡️" button that cycles through
+the full fetched list without re-hitting TikTok.
 """
-import asyncio
 import logging
 import os
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-from tiktok_utils import fetch_videos, build_message, DEFAULT_HASHTAGS
+from tiktok_utils import fetch_videos, build_message
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 MS_TOKEN = os.environ.get("TIKTOK_MS_TOKEN", "")
-TOP_N = 5
+PAGE_SIZE = 5
 
 HELP_TEXT = """
 🤖 <b>AI TikTok Bot — Commands</b>
@@ -37,18 +39,71 @@ HELP_TEXT = """
 /alltime — all-time top by views
 /tag &lt;name&gt; — specific hashtag (e.g. <code>/tag kling</code>)
 /help — show this message
+
+Tap <b>5 more ➡️</b> under any result to cycle through more videos.
 """.strip()
 
-
-# Minimum views required per timeframe to qualify as "popular"
 MIN_VIEWS = {
-    "fresh":   50_000,    # 6h  — must be exploding fast
-    "today":   200_000,   # 24h
-    "digest":  500_000,   # 72h
-    "week":  1_000_000,   # 7d
-    "alltime": 5_000_000, # no time limit — only genuine viral hits
-    "tag":     100_000,   # custom hashtag searches
+    "fresh":   50_000,
+    "today":   200_000,
+    "digest":  500_000,
+    "week":  1_000_000,
+    "alltime": 5_000_000,
+    "tag":     100_000,
 }
+
+# Per-user cache: { user_id: { videos, offset, title } }
+_cache: dict[int, dict] = {}
+
+
+def more_button() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("5 more ➡️", callback_data="more")]])
+
+
+async def send_page(update: Update, user_id: int, is_callback: bool = False) -> None:
+    cache = _cache.get(user_id)
+    if not cache:
+        text = "⚠️ Session expired — run a command again to start fresh."
+        if is_callback:
+            await update.callback_query.answer()
+            await update.callback_query.message.reply_text(text)
+        else:
+            await update.message.reply_text(text)
+        return
+
+    videos = cache["videos"]
+    offset = cache["offset"]
+    title = cache["title"]
+
+    page = videos[offset: offset + PAGE_SIZE]
+    if not page:
+        text = "✅ That's all the videos for this search. Run a command to start a new one."
+        if is_callback:
+            await update.callback_query.answer("No more videos!")
+            await update.callback_query.message.reply_text(text)
+        else:
+            await update.message.reply_text(text)
+        return
+
+    cache["offset"] += PAGE_SIZE
+    has_more = cache["offset"] < len(videos)
+
+    page_num = offset // PAGE_SIZE + 1
+    paged_title = f"{title}  (#{page_num})"
+    msg = build_message(page, paged_title)
+
+    reply_markup = more_button() if has_more else None
+
+    if is_callback:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_html(msg, reply_markup=reply_markup, disable_web_page_preview=False)
+    else:
+        await update.message.reply_html(msg, reply_markup=reply_markup, disable_web_page_preview=False)
+
+
+async def handle_more(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    await send_page(update, user_id, is_callback=True)
 
 
 async def send_digest(
@@ -75,10 +130,15 @@ async def send_digest(
                 "Try /digest or /week for a wider window."
             )
             return
+
         key = (lambda v: v["score"]) if sort_by_score else (lambda v: v["views"])
-        top = sorted(videos, key=key, reverse=True)[:TOP_N]
-        msg = build_message(top, title)
-        await update.message.reply_html(msg, disable_web_page_preview=False)
+        sorted_videos = sorted(videos, key=key, reverse=True)
+
+        user_id = update.effective_user.id
+        _cache[user_id] = {"videos": sorted_videos, "offset": 0, "title": title}
+
+        await send_page(update, user_id, is_callback=False)
+
     except Exception as exc:
         log.exception("fetch error")
         await update.message.reply_text(f"❌ Error: {exc}")
@@ -125,6 +185,7 @@ def main() -> None:
     app.add_handler(CommandHandler("week", cmd_week))
     app.add_handler(CommandHandler("alltime", cmd_alltime))
     app.add_handler(CommandHandler("tag", cmd_tag))
+    app.add_handler(CallbackQueryHandler(handle_more, pattern="^more$"))
 
     log.info("Bot started — polling…")
     app.run_polling(drop_pending_updates=True)
