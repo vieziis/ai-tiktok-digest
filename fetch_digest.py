@@ -48,13 +48,14 @@ async def fetch_videos() -> list[dict]:
                         continue
                     seen_ids.add(vid_id)
 
-                    stats = video.stats or {}
-                    author = video.author
+                    d = video.as_dict
+                    stats = d.get("stats", {})
+                    author = d.get("author", {})
                     results.append(
                         {
                             "id": vid_id,
-                            "desc": (video.desc or "").strip() or "(no description)",
-                            "username": getattr(author, "username", "unknown"),
+                            "desc": (d.get("desc") or "").strip() or "(no description)",
+                            "username": author.get("uniqueId", "unknown"),
                             "views": stats.get("playCount", 0),
                             "likes": stats.get("diggCount", 0),
                             "tag": tag,
@@ -66,16 +67,20 @@ async def fetch_videos() -> list[dict]:
     return results
 
 
+def html_escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def build_message(videos: list[dict]) -> str:
-    lines = ["🤖 *Daily AI TikTok Digest*\n"]
+    lines = ["🤖 <b>Daily AI TikTok Digest</b>\n"]
     for i, v in enumerate(videos, 1):
         url = tiktok_url(v["id"], v["username"])
         desc = v["desc"][:120] + ("…" if len(v["desc"]) > 120 else "")
         lines.append(
-            f"*{i}\\. {desc}*\n"
-            f"👤 @{v['username']}\n"
+            f"<b>{i}. {html_escape(desc)}</b>\n"
+            f"👤 @{html_escape(v['username'])}\n"
             f"👁 {fmt_number(v['views'])}  ❤️ {fmt_number(v['likes'])}\n"
-            f"🔗 [Watch on TikTok]({url})\n"
+            f'🔗 <a href="{url}">Watch on TikTok</a>\n'
         )
     return "\n".join(lines)
 
@@ -85,7 +90,7 @@ def send_telegram(text: str) -> None:
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
-        "parse_mode": "MarkdownV2",
+        "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
     resp = httpx.post(url, json=payload, timeout=30)
